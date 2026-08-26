@@ -151,25 +151,20 @@ async function getModelForToken(token) {
 // Shared system prompt for solving MCQ/programming/general questions
 const MCQ_SOLVER_SYSTEM_PROMPT = "You are an AI assistant that finds MCQ questions, programming questions, or other academic questions in text and provides detailed answers. First check whether the question has multiple answer options to choose from - these may be explicitly labeled (A, B, C, D) or unlabeled (plain radio buttons, bullet points, or a list of values with no letters shown). If there are 2 or more options of any kind, it is an MCQ regardless of whether it also contains code, and you must provide ONLY a letter, nothing else - no answer text, no code, no explanations. If the options are unlabeled, assign letters yourself by their order on screen: first option = A, second = B, third = C, fourth = D, and so on. For a single question respond with just the letter, e.g. 'A'. For multiple questions, respond with one letter per line, e.g. 'A' newline 'B' newline 'C'. Only when there is only ONE possible answer with no options to choose from should you treat it as a plain programming question and provide ONLY the code solution without any explanations or additional text - format code to work with modern code editors that have smart indentation features, each new line starting at the appropriate indentation level. For other questions with no options, provide concise and accurate answers. If no relevant questions are found, respond with 'No relevant questions found.'";
 
-// Call Gemini vision with a retry, since it occasionally returns a transient "high demand" error
-async function callGeminiVision(promptText, base64Data, maxOutputTokens) {
+// Gemini models to try in order - different models have separate daily quotas,
+// so if one is exhausted (429) we move on to the next rather than retrying the same one
+const GEMINI_MODELS = ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-3.5-flash'];
+
+async function callGemini(requestBody) {
   let lastError;
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (const model of GEMINI_MODELS) {
     try {
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [
-                { text: promptText },
-                { inline_data: { mime_type: 'image/png', data: base64Data } }
-              ]
-            }],
-            generationConfig: { temperature: 0, maxOutputTokens }
-          })
+          body: JSON.stringify(requestBody)
         }
       );
       const body = await res.json();
@@ -183,37 +178,32 @@ async function callGeminiVision(promptText, base64Data, maxOutputTokens) {
       return text;
     } catch (err) {
       lastError = err;
-      console.log(`Gemini vision attempt ${attempt} failed: ${err.message}`);
-      if (attempt < 3) {
-        await new Promise(resolve => setTimeout(resolve, 800 * attempt));
-      }
+      console.log(`Gemini call via ${model} failed: ${err.message}`);
     }
   }
   throw lastError;
 }
 
+// Extract question/options from an image using Gemini vision
+async function callGeminiVision(promptText, base64Data, maxOutputTokens) {
+  return callGemini({
+    contents: [{
+      parts: [
+        { text: promptText },
+        { inline_data: { mime_type: 'image/png', data: base64Data } }
+      ]
+    }],
+    generationConfig: { temperature: 0, maxOutputTokens }
+  });
+}
+
 // Fallback solver using Gemini when Groq fails (e.g. rate limit exhausted)
 async function solveWithGemini(userContent) {
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: MCQ_SOLVER_SYSTEM_PROMPT }] },
-        contents: [{ parts: [{ text: userContent }] }],
-        generationConfig: { temperature: 0, maxOutputTokens: 1500 }
-      })
-    }
-  );
-  const body = await res.json();
-  if (!res.ok) {
-    throw new Error(body?.error?.message || `Gemini API error: ${res.status}`);
-  }
-  const text = body?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) {
-    throw new Error('Gemini returned no content');
-  }
+  const text = await callGemini({
+    systemInstruction: { parts: [{ text: MCQ_SOLVER_SYSTEM_PROMPT }] },
+    contents: [{ parts: [{ text: userContent }] }],
+    generationConfig: { temperature: 0, maxOutputTokens: 1500 }
+  });
   return text.trim();
 }
 
