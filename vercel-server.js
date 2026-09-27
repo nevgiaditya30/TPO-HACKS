@@ -83,27 +83,32 @@ let useRedis = false;
 
 // Try to initialize Redis client with environment variables
 try {
-  redisClient = createClient({
-    username: process.env.REDIS_USERNAME || 'default',
-    password: process.env.REDIS_PASSWORD,
-    socket: {
-      host: process.env.REDIS_HOST || 'localhost',
-      port: process.env.REDIS_PORT || 6379,
-      tls: process.env.REDIS_TLS === 'true',
-      connectTimeout: 5000,
-      reconnectStrategy: (retries) => retries > 2 ? false : Math.min(retries * 100, 1000)
-    }
-  });
+  if (process.env.REDIS_HOST || process.env.REDIS_PASSWORD) {
+    redisClient = createClient({
+      username: process.env.REDIS_USERNAME || 'default',
+      password: process.env.REDIS_PASSWORD,
+      socket: {
+        host: process.env.REDIS_HOST || 'localhost',
+        port: process.env.REDIS_PORT || 6379,
+        tls: process.env.REDIS_TLS === 'true',
+        connectTimeout: 5000,
+        reconnectStrategy: (retries) => retries > 2 ? false : Math.min(retries * 100, 1000)
+      }
+    });
 
-  redisClient.on('error', (err) => {
-    console.log('Redis Client Error (continuing with fallback)', err);
+    redisClient.on('error', (err) => {
+      console.log('Redis Client Error (continuing with fallback)', err.message);
+      useRedis = false;
+    });
+
+    // Attempt to connect to Redis
+    await redisClient.connect();
+    useRedis = true;
+    console.log('Successfully connected to Redis');
+  } else {
+    console.log('No REDIS_HOST or REDIS_PASSWORD provided, using in-memory Map as fallback');
     useRedis = false;
-  });
-
-  // Attempt to connect to Redis
-  await redisClient.connect();
-  useRedis = true;
-  console.log('Successfully connected to Redis');
+  }
 } catch (error) {
   console.log('Failed to connect to Redis, using in-memory Map as fallback');
   useRedis = false;
@@ -113,7 +118,7 @@ try {
 async function getModelForToken(token) {
   // If no token is provided, use the default llama model
   if (!token) {
-    return "openai/gpt-oss-120b";
+    return "llama3-8b-8192";
   }
 
   if (useRedis && redisClient) {
@@ -366,7 +371,7 @@ app.post('/solveq', async (req, res) => {
     }
 
     const solverModel = new ChatGroq({
-      model: "openai/gpt-oss-120b", // or any default model
+      model: "llama3-8b-8192", // or any default model
       temperature: 0,
       top_p: 1,
       maxTokens: 1500,
@@ -409,7 +414,7 @@ app.get('/solveq', async (req, res) => {
     }
 
     const solverModel = new ChatGroq({
-      model: "openai/gpt-oss-120b",
+      model: "llama3-8b-8192",
       temperature: 0,
       top_p: 1,
       maxTokens: 1500,
@@ -482,7 +487,7 @@ app.post('/admin/add-premium-token', async (req, res) => {
       });
     }
 
-    const model = "openai/gpt-oss-20b";
+    const model = "llama3-8b-8192";
 
     if (useRedis && redisClient) {
       // Store token data in Redis with ChatGPT model

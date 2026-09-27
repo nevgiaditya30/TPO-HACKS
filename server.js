@@ -126,7 +126,7 @@ try {
 async function getModelForToken(token) {
   // If no token is provided, use the default llama model
   if (!token) {
-    return "openai/gpt-oss-120b";
+    return "llama3-8b-8192";
   }
   
   if (useRedis && redisClient) {
@@ -158,7 +158,7 @@ async function getModelForToken(token) {
   }
   
   // If token is provided but not found or count is zero, use default llama model
-  return "openai/gpt-oss-120b";
+  return "llama3-8b-8192";
 }
 
 // Function to log token usage
@@ -655,7 +655,7 @@ app.post('/admin/add-premium-token', async (req, res) => {
       });
     }
     
-    const model = "openai/gpt-oss-20b";
+    const model = "llama3-8b-8192";
     
     if (useRedis && redisClient) {
       // Store token data in Redis with ChatGPT model
@@ -804,7 +804,7 @@ app.post('/verify-payment', async (req, res) => {
     
     // Payment verified, create premium token
     const token = 'premium_' + Date.now() + '_' + Math.random().toString(36).substring(2, 10);
-    const modelName = 'openai/gpt-oss-20b';
+    const modelName = 'llama3-8b-8192';
     
     if (useRedis && redisClient) {
       // Store token data in Redis with ChatGPT model
