@@ -150,7 +150,7 @@ async function getModelForToken(token) {
   }
 
   // If token is provided but not found or count is zero, use default llama model
-  return "openai/gpt-oss-120b";
+  return "llama3-8b-8192";
 }
 
 // Shared system prompt for solving MCQ/programming/general questions
